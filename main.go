@@ -105,8 +105,8 @@ func main() {
 		log.Printf("Downloaded %s", urlInfo.Name)
 
 		log.Printf("Tagging %s", urlInfo.Name)
-		// Run through all files in the playlist and put all files that have been created after the timestamp into an array
-		cmd := exec.Command("find", config["data_path"]+"/"+strings.ToLower(urlInfo.Name), "-type", "f", "-ctime", "-0.5")
+		// Run through all files in the playlist and put all mp3 files that have been created after the timestamp into an array
+		cmd := exec.Command("find", config["data_path"]+"/"+strings.ToLower(urlInfo.Name), "-type", "f", "-name", "*.mp3", "-ctime", "-0.05")
 		output, err := cmd.Output()
 		if err != nil {
 			// Ignore error and just continue to the next playlist
