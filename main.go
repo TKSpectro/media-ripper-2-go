@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"go.senan.xyz/taglib"
 )
 
 type URLInfo struct {
@@ -48,11 +50,6 @@ func downloadPlaylist(urlInfo URLInfo, config map[string]string) error {
 		"--extract-audio",
 		"--audio-format", "mp3",
 		"--add-metadata",
-		// Add the playlistName as the album
-		"--postprocessor-args", ",metadata:-metadata", "album=" + playlistName,
-		// Add the {info["n_entries"] - info["playlist_index"] + 1} as tracknumber (EasyId3)
-		"--postprocessor-args", "metadata:-metadata", "tracknumber=" + "{n_entries - playlist_index + 1}",
-		// playlist name needs to be uppercase
 		"--download-archive", filepath.Join(config["internal_path"], "ARCHIVE_"+strings.ToUpper(playlistName)+".txt"),
 		"--output", filepath.Join(config["data_path"], playlistName, "%(n_entries+1-playlist_index)04d %(title|Unknown)s [%(id)s].%(ext)s"),
 		urlInfo.URL,
@@ -105,5 +102,30 @@ func main() {
 		if err := downloadPlaylist(urlInfo, config); err != nil {
 			log.Printf("Failed to download %s: %v", urlInfo.URL, err)
 		}
+
+		log.Printf("Downloaded %s", urlInfo.Name)
+		log.Printf("Tagging %s", urlInfo.Name)
+		// Run through all files in the playlist and put all files that have been created after the timestamp into an array
+		cmd := exec.Command("find", config["data_path"]+"/"+strings.ToLower(urlInfo.Name), "-type", "f", "-ctime", "-0.5")
+		output, err := cmd.Output()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		files := strings.Split(strings.TrimSpace(string(output)), "\n")
+		for _, file := range files {
+			trackNumber := strings.Split(filepath.Base(file), " ")[0]
+
+			err := taglib.WriteTags(file, map[string][]string{
+				// Multi-valued tags allowed
+				taglib.TrackNumber: {trackNumber},
+				taglib.Album:       {strings.ToLower(urlInfo.Name)},
+			}, 0)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+		log.Printf("Tagged %s", urlInfo.Name)
 	}
+
 }
