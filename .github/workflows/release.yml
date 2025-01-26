@@ -26,3 +26,4 @@ jobs:
                   project_path: ./
                   compress_assets: OFF
                   asset_name: media-ripper-2-${{ matrix.goos }}-${{ matrix.goarch }}
+                  build_command: 'CGO_ENABLED=0 go build'
