@@ -102,17 +102,19 @@ func main() {
 		if err := downloadPlaylist(urlInfo, config); err != nil {
 			log.Printf("Failed to download %s: %v", urlInfo.URL, err)
 		}
-
 		log.Printf("Downloaded %s", urlInfo.Name)
+
 		log.Printf("Tagging %s", urlInfo.Name)
 		// Run through all files in the playlist and put all files that have been created after the timestamp into an array
 		cmd := exec.Command("find", config["data_path"]+"/"+strings.ToLower(urlInfo.Name), "-type", "f", "-ctime", "-0.5")
 		output, err := cmd.Output()
 		if err != nil {
-			log.Fatal(err)
+			// Ignore error and just continue to the next playlist
+			continue
 		}
 
 		files := strings.Split(strings.TrimSpace(string(output)), "\n")
+		log.Printf("Found %d files", len(files))
 		for _, file := range files {
 			trackNumber := strings.Split(filepath.Base(file), " ")[0]
 
@@ -122,7 +124,8 @@ func main() {
 				taglib.Album:       {strings.ToLower(urlInfo.Name)},
 			}, 0)
 			if err != nil {
-				log.Fatal(err)
+				log.Printf("Failed to tag %s: %v", file, err)
+				continue
 			}
 		}
 		log.Printf("Tagged %s", urlInfo.Name)
