@@ -110,6 +110,7 @@ func main() {
 		output, err := cmd.Output()
 		if err != nil {
 			// Ignore error and just continue to the next playlist
+			log.Printf("Failed to find files for %s: %v", urlInfo.Name, err)
 			continue
 		}
 
