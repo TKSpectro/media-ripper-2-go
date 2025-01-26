@@ -49,9 +49,9 @@ func downloadPlaylist(urlInfo URLInfo, config map[string]string) error {
 		"--audio-format", "mp3",
 		"--add-metadata",
 		// Add the playlistName as the album
-		"--postprocessor-args", "-metadata", "album=" + playlistName,
+		"--postprocessor-args", ",metadata:-metadata", "album=" + playlistName,
 		// Add the {info["n_entries"] - info["playlist_index"] + 1} as tracknumber (EasyId3)
-		"--postprocessor-args", "-metadata", "tracknumber=" + "{n_entries - playlist_index + 1}",
+		"--postprocessor-args", "metadata:-metadata", "tracknumber=" + "{n_entries - playlist_index + 1}",
 		// playlist name needs to be uppercase
 		"--download-archive", filepath.Join(config["internal_path"], "ARCHIVE_"+strings.ToUpper(playlistName)+".txt"),
 		"--output", filepath.Join(config["data_path"], playlistName, "%(n_entries+1-playlist_index)04d %(title|Unknown)s [%(id)s].%(ext)s"),
