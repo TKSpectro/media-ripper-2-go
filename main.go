@@ -62,11 +62,6 @@ func downloadPlaylist(urlInfo URLInfo, config map[string]string) error {
 }
 
 func main() {
-	currentDir, err := os.Getwd()
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatal(err)
@@ -97,7 +92,7 @@ func main() {
 		}
 	}
 
-	urls, err := loadURLs(filepath.Join(currentDir, "urls.json"))
+	urls, err := loadURLs(filepath.Join(defaultConfigPath, "urls.json"))
 	if err != nil {
 		log.Fatal(err)
 	}
