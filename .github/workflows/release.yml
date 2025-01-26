@@ -25,4 +25,4 @@ jobs:
                   goarch: ${{ matrix.goarch }}
                   project_path: ./
                   compress_assets: OFF
-                  asset_name: ${BINARY_NAME}-${GOOS}-${GOARCH}
+                  asset_name: media-ripper-2-${{ matrix.goos }}-${{ matrix.goarch }}
