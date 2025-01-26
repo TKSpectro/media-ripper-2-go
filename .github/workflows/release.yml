@@ -25,3 +25,4 @@ jobs:
                   goarch: ${{ matrix.goarch }}
                   project_path: ./
                   compress_assets: OFF
+                  asset_name: ${BINARY_NAME}-${GOOS}-${GOARCH}
