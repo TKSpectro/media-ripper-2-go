@@ -1,0 +1,83 @@
+[
+    {
+        "name": "soundcloud",
+        "url": "https://soundcloud.com/user-665884173/likes",
+        "overwriteTitle": true
+    },
+    {
+        "name": "hardstyle",
+        "url": "https://youtube.com/playlist?list=PL1uOA_tl83r8CbshTlIWyRIl_C5hoSwVF"
+    },
+    {
+        "name": "techno",
+        "url": "https://youtube.com/playlist?list=PL1uOA_tl83r8bMqSErdNT762z_r7Q8LA7"
+    },
+    {
+        "name": "phonk",
+        "url": "https://youtube.com/playlist?list=PL1uOA_tl83r_Za3DsjpVzK6ZMJiKzPXW8"
+    },
+    {
+        "name": "musik",
+        "url": "https://youtube.com/playlist?list=PL1uOA_tl83r9Ru2xfrzzQLtYXlBVbSPCX"
+    },
+    {
+        "name": "lofi",
+        "url": "https://youtube.com/playlist?list=PL1uOA_tl83r8QuLyPv3clePQ2WjBoD31a"
+    },
+    {
+        "name": "minimaltechno",
+        "url": "https://youtube.com/playlist?list=PL1uOA_tl83r8acbnJ9v3CtjD4IAtWQ4Gh"
+    },
+    {
+        "name": "dnb",
+        "url": "https://youtube.com/playlist?list=PL1uOA_tl83r8l5zroWNZI69yYeE80xlev"
+    },
+    {
+        "name": "sets",
+        "url": "https://youtube.com/playlist?list=PL1uOA_tl83r8vdmv7roMkY2Baf_vV4Hyz"
+    },
+    {
+        "name": "allthecores",
+        "url": "https://youtube.com/playlist?list=PL1uOA_tl83r8Xp9vdoyzuCuUAlAnc89kn"
+    },
+    {
+        "name": "hn-channel",
+        "url": "https://www.youtube.com/watch?v=c_PhUjmJmDY&list=UULFjwUQarOzPKrNc1LlqeOZrg",
+        "overwriteTitle": true
+    },
+    {
+        "name": "saluuuuuu",
+        "url": "https://www.youtube.com/@saluuuuu.u_u.t/videos",
+        "overwriteTitle": true
+    },
+    {
+        "name": "beastboy",
+        "url": "https://www.youtube.com/playlist?list=PL1uOA_tl83r8qR569e2dLnlPp7j03qsRb",
+        "overwriteTitle": true
+    },
+    {
+        "name": "holo",
+        "url": "https://www.youtube.com/playlist?list=PL1uOA_tl83r_fwIVhwMi_Z9MCsWf7Chjr",
+        "overwriteTitle": true
+    },
+    {
+        "name": "rap",
+        "url": "https://youtube.com/playlist?list=PL1uOA_tl83r_MXIGENx-m6qneOpVW30G2&si=IGJ0K6mjCAyPf-hw",
+        "overwriteTitle": true
+    },
+    {
+        "name": "jpop",
+        "url": "https://www.youtube.com/playlist?list=PL1uOA_tl83r_7FEpnii7bG3YM1q2o05Fn",
+        "overwriteTitle": true
+    },
+    {
+        "name": "metal",
+        "url": "https://www.youtube.com/playlist?list=PL1uOA_tl83r9mgZhwsXfjLbt0JfB6rF4Z",
+        "overwriteTitle": true
+    },
+    {
+        "name": "relevant-dnb",
+        "url": "https://www.youtube.com/playlist?list=PLeO2B1Tsa95khmlEkzhWVojL4O7a5X0HN",
+        "overwriteTitle": true
+    }
+]
