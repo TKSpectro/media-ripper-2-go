@@ -7,9 +7,12 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
+	"github.com/robfig/cron/v3"
 	"go.senan.xyz/taglib"
 )
 
@@ -50,6 +53,7 @@ func downloadPlaylist(urlInfo URLInfo, config map[string]string) error {
 		"--extract-audio",
 		"--audio-format", "mp3",
 		"--add-metadata",
+		"--js-runtimes", "deno:/usr/local/bin/deno",
 		"--download-archive", filepath.Join(config["internal_path"], "ARCHIVE_"+strings.ToUpper(playlistName)+".txt"),
 		"--output", filepath.Join(config["data_path"], playlistName, "%(n_entries+1-playlist_index)04d %(title|Unknown)s [%(id)s].%(ext)s"),
 		urlInfo.URL,
@@ -62,42 +66,8 @@ func downloadPlaylist(urlInfo URLInfo, config map[string]string) error {
 	return cmd.Run()
 }
 
-func main() {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	defaultConfigPath := filepath.Join(homeDir, ".config", "media-ripper-2-go")
-
-	var dataPath, internalPath, tempPath string
-	flag.StringVar(&dataPath, "path", "", "Path to store downloaded files")
-	flag.StringVar(&internalPath, "internal_path", filepath.Join(defaultConfigPath, "internal"), "Internal storage path")
-	flag.StringVar(&tempPath, "temp_path", filepath.Join(defaultConfigPath, "temp"), "Temporary storage path")
-	flag.Parse()
-
-	if dataPath == "" {
-		fmt.Println("No path passed! Pass a path with --path")
-		os.Exit(1)
-	}
-
-	config := map[string]string{
-		"internal_path": internalPath,
-		"data_path":     dataPath,
-		"temp_path":     tempPath,
-	}
-
-	for _, path := range config {
-		if err := ensureDir(path); err != nil {
-			log.Fatal(err)
-		}
-	}
-
-	urls, err := loadURLs(filepath.Join(defaultConfigPath, "urls.json"))
-	if err != nil {
-		log.Fatal(err)
-	}
-
+func processDownloads(urls []URLInfo, config map[string]string) {
+	log.Println("Starting download process...")
 	for _, urlInfo := range urls {
 		if err := downloadPlaylist(urlInfo, config); err != nil {
 			log.Printf("Failed to download %s: %v", urlInfo.URL, err)
@@ -131,5 +101,88 @@ func main() {
 		}
 		log.Printf("Tagged %s", urlInfo.Name)
 	}
+	log.Println("Download process completed")
+}
 
+func runScheduler(urls []URLInfo, config map[string]string, cronSchedule string) {
+	// Create a new cron scheduler with seconds precision
+	c := cron.New(cron.WithLogger(cron.VerbosePrintfLogger(log.New(os.Stdout, "cron: ", log.LstdFlags))))
+
+	// Schedule jobs using the provided cron expression
+	// Cron format: minute hour day month dayofweek
+	_, err := c.AddFunc(cronSchedule, func() {
+		processDownloads(urls, config)
+	})
+	if err != nil {
+		log.Fatal("Failed to add cron job:", err)
+	}
+
+	log.Printf("Scheduler started with schedule: %s", cronSchedule)
+	c.Start()
+
+	// Wait for interrupt signal to gracefully shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	<-sigChan
+
+	log.Println("Shutting down scheduler...")
+	c.Stop()
+}
+
+func main() {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defaultConfigPath := filepath.Join(homeDir, ".config", "media-ripper-2-go")
+
+	var dataPath, internalPath, tempPath, configPath, cronSchedule string
+	var schedule bool
+	flag.StringVar(&dataPath, "path", "", "Path to store downloaded files")
+	flag.StringVar(&internalPath, "internal_path", filepath.Join(defaultConfigPath, "internal"), "Internal storage path")
+	flag.StringVar(&tempPath, "temp_path", filepath.Join(defaultConfigPath, "temp"), "Temporary storage path")
+	flag.StringVar(&configPath, "config", "", "Path to urls.json config file")
+	flag.BoolVar(&schedule, "schedule", false, "Run in scheduled mode")
+	flag.StringVar(&cronSchedule, "cron", "0 5,10,15,20 * * *", "Cron schedule (default: 5am, 10am, 3pm, 8pm)")
+	flag.Parse()
+
+	if dataPath == "" {
+		fmt.Println("No path passed! Pass a path with --path")
+		os.Exit(1)
+	}
+
+	config := map[string]string{
+		"internal_path": internalPath,
+		"data_path":     dataPath,
+		"temp_path":     tempPath,
+	}
+
+	for _, path := range config {
+		if err := ensureDir(path); err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	// Determine config file path: flag > /config > ~/.config
+	if configPath == "" {
+		configPath = "/config/urls.json"
+		if _, err := os.Stat(configPath); os.IsNotExist(err) {
+			configPath = filepath.Join(defaultConfigPath, "urls.json")
+		}
+	}
+
+	log.Printf("Loading config from: %s", configPath)
+	urls, err := loadURLs(configPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if schedule {
+		// Run in scheduled mode with the provided cron expression
+		runScheduler(urls, config, cronSchedule)
+	} else {
+		// Run once immediately
+		processDownloads(urls, config)
+	}
 }

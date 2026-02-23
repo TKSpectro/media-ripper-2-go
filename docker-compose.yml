@@ -1,0 +1,16 @@
+services:
+    media-ripper:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        container_name: media-ripper
+        restart: unless-stopped
+
+        volumes:
+            # Config directory containing urls.json and internal files
+            - ./config:/config
+            # Downloaded media files
+            - ./data:/data
+
+        environment:
+            - TZ=UTC
