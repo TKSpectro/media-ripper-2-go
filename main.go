@@ -105,6 +105,9 @@ func processDownloads(urls []URLInfo, config map[string]string) {
 }
 
 func runScheduler(urls []URLInfo, config map[string]string, cronSchedule string) {
+	// Run once immediately on startup
+	processDownloads(urls, config)
+
 	// Create a new cron scheduler with seconds precision
 	c := cron.New(cron.WithLogger(cron.VerbosePrintfLogger(log.New(os.Stdout, "cron: ", log.LstdFlags))))
 
