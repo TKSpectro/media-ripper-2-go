@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/robfig/cron/v3"
 	"go.senan.xyz/taglib"
@@ -43,6 +44,45 @@ func ensureDir(dir string) error {
 	return nil
 }
 
+func getLatestFileTime(playlistPath string) time.Time {
+	var latestTime time.Time
+	checkedFiles := 0
+
+	log.Printf("Scanning playlist path for latest mp3: %s", playlistPath)
+
+	// Walk through all files in the playlist directory
+	err := filepath.Walk(playlistPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			log.Printf("Skipping path due to error (%s): %v", path, err)
+			return nil // Skip errors
+		}
+
+		// Only check mp3 files
+		if !info.IsDir() && strings.HasSuffix(strings.ToLower(path), ".mp3") {
+			checkedFiles++
+			if info.ModTime().After(latestTime) {
+				latestTime = info.ModTime()
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		log.Printf("Failed to walk playlist path %s: %v", playlistPath, err)
+		return time.Time{}
+	}
+
+	// Add 1 minute buffer to avoid re-processing the same files
+	if !latestTime.IsZero() {
+		log.Printf("Latest mp3 mod time in %s: %s (from %d files)", playlistPath, latestTime.Format(time.RFC3339), checkedFiles)
+		latestTime = latestTime.Add(1 * time.Minute)
+		log.Printf("Using buffered comparison time: %s", latestTime.Format(time.RFC3339))
+	} else {
+		log.Printf("No mp3 files found in %s", playlistPath)
+	}
+
+	return latestTime
+}
+
 func downloadPlaylist(urlInfo URLInfo, config map[string]string) error {
 	if urlInfo.Ignore {
 		return nil
@@ -53,8 +93,7 @@ func downloadPlaylist(urlInfo URLInfo, config map[string]string) error {
 		"--extract-audio",
 		"--audio-format", "mp3",
 		"--add-metadata",
-		// "--remote-components ejs:github",
-		// "--js-runtimes", "deno:/bin/deno",
+		"--remote-components", "ejs:github",
 		"--download-archive", filepath.Join(config["internal_path"], "ARCHIVE_"+strings.ToUpper(playlistName)+".txt"),
 		"--output", filepath.Join(config["data_path"], playlistName, "%(n_entries+1-playlist_index)04d %(title|Unknown)s [%(id)s].%(ext)s"),
 		urlInfo.URL,
@@ -70,14 +109,31 @@ func downloadPlaylist(urlInfo URLInfo, config map[string]string) error {
 func processDownloads(urls []URLInfo, config map[string]string) {
 	log.Println("Starting download process...")
 	for _, urlInfo := range urls {
+		playlistName := strings.ToLower(urlInfo.Name)
+
+		// Get the latest file modification time in the playlist directory
+		playlistPath := filepath.Join(config["data_path"], playlistName)
+		lastFileTime := getLatestFileTime(playlistPath)
+
 		if err := downloadPlaylist(urlInfo, config); err != nil {
 			log.Printf("Failed to download %s: %v", urlInfo.URL, err)
 		}
 		log.Printf("Downloaded %s", urlInfo.Name)
 
 		log.Printf("Tagging %s", urlInfo.Name)
-		// Run through all files in the playlist and put all mp3 files that have been created after the timestamp into an array
-		cmd := exec.Command("find", config["data_path"]+"/"+strings.ToLower(urlInfo.Name), "-type", "f", "-name", "*.mp3", "-ctime", "-0.05")
+
+		var cmd *exec.Cmd
+
+		if lastFileTime.IsZero() {
+			// First run - tag all mp3 files
+			log.Printf("First run for %s - tagging all files", urlInfo.Name)
+			cmd = exec.Command("find", playlistPath, "-type", "f", "-name", "*.mp3")
+		} else {
+			// Find files modified after the latest existing file time
+			log.Printf("Finding files for %s modified after %s", urlInfo.Name, lastFileTime.Format(time.RFC3339))
+			cmd = exec.Command("find", playlistPath, "-type", "f", "-name", "*.mp3", "-newermt", lastFileTime.Format(time.RFC3339))
+		}
+
 		output, err := cmd.Output()
 		if err != nil {
 			// Ignore error and just continue to the next playlist
@@ -86,21 +142,35 @@ func processDownloads(urls []URLInfo, config map[string]string) {
 		}
 
 		files := strings.Split(strings.TrimSpace(string(output)), "\n")
-		log.Printf("Found %d files", len(files))
+		// Filter out empty strings
+		var validFiles []string
 		for _, file := range files {
+			if file != "" {
+				validFiles = append(validFiles, file)
+			}
+		}
+
+		log.Printf("Found %d files to tag", len(validFiles))
+		successCount := 0
+		for _, file := range validFiles {
 			trackNumber := strings.Split(filepath.Base(file), " ")[0]
 
 			err := taglib.WriteTags(file, map[string][]string{
 				// Multi-valued tags allowed
 				taglib.TrackNumber: {trackNumber},
-				taglib.Album:       {strings.ToLower(urlInfo.Name)},
+				taglib.Album:       {playlistName},
 			}, 0)
 			if err != nil {
 				log.Printf("Failed to tag %s: %v", file, err)
 				continue
 			}
+			successCount++
 		}
-		log.Printf("Tagged %s", urlInfo.Name)
+		if successCount > 0 {
+			log.Printf("Tagged %d/%d files for %s", successCount, len(validFiles), urlInfo.Name)
+		} else if len(validFiles) > 0 {
+			log.Printf("Failed to tag any files for %s", urlInfo.Name)
+		}
 	}
 	log.Println("Download process completed")
 }
