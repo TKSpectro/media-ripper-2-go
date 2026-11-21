@@ -46,43 +46,42 @@ func ensureDir(dir string) error {
 	return nil
 }
 
-func getLatestFileTime(playlistPath string) time.Time {
-	var latestTime time.Time
-	checkedFiles := 0
+// parseTrackNumber extracts the "NNNN " track prefix we assign from a
+// filename, e.g. "0001 Some Title [id].mp3" -> (1, true).
+func parseTrackNumber(base string) (int, bool) {
+	parts := strings.SplitN(base, " ", 2)
+	if len(parts) != 2 || len(parts[0]) != 4 {
+		return 0, false
+	}
+	num, err := strconv.Atoi(parts[0])
+	return num, err == nil
+}
 
-	log.Printf("Scanning playlist path for latest mp3: %s", playlistPath)
+func isNumberedFilename(base string) bool {
+	_, ok := parseTrackNumber(base)
+	return ok
+}
 
-	// Walk through all files in the playlist directory
+// findUnnumberedFiles returns every mp3 in playlistPath that doesn't yet
+// have a "NNNN " prefix - i.e. freshly downloaded, not-yet-tagged files.
+// This is deliberately not based on file mtime: a run that gets interrupted
+// (container restart, crash) between download and tagging would otherwise
+// permanently lose track of the file, since its mtime becomes the new
+// high-water mark and it would never again look "newer than last run".
+// Scanning for the absence of a number instead makes this self-healing -
+// an untagged file left behind by any previous run gets picked up again.
+func findUnnumberedFiles(playlistPath string) ([]string, error) {
+	var files []string
 	err := filepath.Walk(playlistPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			log.Printf("Skipping path due to error (%s): %v", path, err)
-			return nil // Skip errors
+		if err != nil || info.IsDir() || !strings.HasSuffix(strings.ToLower(path), ".mp3") {
+			return nil
 		}
-
-		// Only check mp3 files
-		if !info.IsDir() && strings.HasSuffix(strings.ToLower(path), ".mp3") {
-			checkedFiles++
-			if info.ModTime().After(latestTime) {
-				latestTime = info.ModTime()
-			}
+		if !isNumberedFilename(filepath.Base(path)) {
+			files = append(files, path)
 		}
 		return nil
 	})
-	if err != nil {
-		log.Printf("Failed to walk playlist path %s: %v", playlistPath, err)
-		return time.Time{}
-	}
-
-	// Add 1 minute buffer to avoid re-processing the same files
-	if !latestTime.IsZero() {
-		log.Printf("Latest mp3 mod time in %s: %s (from %d files)", playlistPath, latestTime.Format(time.RFC3339), checkedFiles)
-		latestTime = latestTime.Add(1 * time.Minute)
-		log.Printf("Using buffered comparison time: %s", latestTime.Format(time.RFC3339))
-	} else {
-		log.Printf("No mp3 files found in %s", playlistPath)
-	}
-
-	return latestTime
+	return files, err
 }
 
 // getNextTrackNumber returns the next free track number for a playlist.
@@ -111,11 +110,8 @@ func getNextTrackNumber(internalPath, playlistPath, playlistName string) int {
 			return nil
 		}
 
-		prefix := strings.SplitN(filepath.Base(path), " ", 2)[0]
-		if len(prefix) == 4 {
-			if num, err := strconv.Atoi(prefix); err == nil && num > maxNum {
-				maxNum = num
-			}
+		if num, ok := parseTrackNumber(filepath.Base(path)); ok && num > maxNum {
+			maxNum = num
 		}
 		return nil
 	})
@@ -162,10 +158,7 @@ func processDownloads(urls []URLInfo, config map[string]string) {
 	log.Println("Starting download process...")
 	for _, urlInfo := range urls {
 		playlistName := strings.ToLower(urlInfo.Name)
-
-		// Get the latest file modification time in the playlist directory
 		playlistPath := filepath.Join(config["data_path"], playlistName)
-		lastFileTime := getLatestFileTime(playlistPath)
 
 		if err := downloadPlaylist(urlInfo, config); err != nil {
 			log.Printf("Failed to download %s: %v", urlInfo.URL, err)
@@ -174,32 +167,10 @@ func processDownloads(urls []URLInfo, config map[string]string) {
 
 		log.Printf("Tagging %s", urlInfo.Name)
 
-		var cmd *exec.Cmd
-
-		if lastFileTime.IsZero() {
-			// First run - tag all mp3 files
-			log.Printf("First run for %s - tagging all files", urlInfo.Name)
-			cmd = exec.Command("find", playlistPath, "-type", "f", "-name", "*.mp3")
-		} else {
-			// Find files modified after the latest existing file time
-			log.Printf("Finding files for %s modified after %s", urlInfo.Name, lastFileTime.Format(time.RFC3339))
-			cmd = exec.Command("find", playlistPath, "-type", "f", "-name", "*.mp3", "-newermt", lastFileTime.Format(time.RFC3339))
-		}
-
-		output, err := cmd.Output()
+		validFiles, err := findUnnumberedFiles(playlistPath)
 		if err != nil {
-			// Ignore error and just continue to the next playlist
-			log.Printf("Failed to find files for %s: %v", urlInfo.Name, err)
+			log.Printf("Failed to scan %s for unnumbered files: %v", playlistPath, err)
 			continue
-		}
-
-		files := strings.Split(strings.TrimSpace(string(output)), "\n")
-		// Filter out empty strings
-		var validFiles []string
-		for _, file := range files {
-			if file != "" {
-				validFiles = append(validFiles, file)
-			}
 		}
 
 		log.Printf("Found %d files to tag", len(validFiles))
