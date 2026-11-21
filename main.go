@@ -238,7 +238,7 @@ func processDownloads(urls []URLInfo, config map[string]string) {
 
 			err := taglib.WriteTags(numberedPath, map[string][]string{
 				// Multi-valued tags allowed
-				taglib.TrackNumber: {strconv.Itoa(nextNum)},
+				taglib.TrackNumber: {fmt.Sprintf("%04d", nextNum)},
 				taglib.Album:       {playlistName},
 			}, 0)
 			if err != nil {
