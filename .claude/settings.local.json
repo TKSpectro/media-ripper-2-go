@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /mnt/truenas_media -maxdepth 4 -iname \"*urls*\" -o -maxdepth 4 -iname \"*config*\" 2>/dev/null | head -50; echo \"---\"; ls -la /mnt/truenas_media 2>/dev/null | head -30)",
+      "Bash(awk '$1>1')",
+      "Bash(go build *)"
+    ]
+  }
+}

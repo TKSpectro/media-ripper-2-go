@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -83,6 +85,56 @@ func getLatestFileTime(playlistPath string) time.Time {
 	return latestTime
 }
 
+// getNextTrackNumber returns the next free track number for a playlist.
+// We own this counter ourselves instead of trusting yt-dlp's
+// playlist_index/n_entries, which drift whenever YouTube reorders or
+// partially paginates a playlist and produced duplicate numbers in practice.
+//
+// The counter is persisted in internal_path so later runs don't need to
+// re-derive it. The one-time bootstrap (no counter file yet) scans for the
+// highest existing "NNNN " filename prefix; that's safe only because every
+// file written under the old scheme genuinely has a real 4-digit number,
+// unlike a freshly downloaded, not-yet-numbered title that might just
+// happen to start with digits (e.g. "30 Second Timer").
+func getNextTrackNumber(internalPath, playlistPath, playlistName string) int {
+	counterFile := filepath.Join(internalPath, "COUNTER_"+strings.ToUpper(playlistName)+".txt")
+
+	if data, err := os.ReadFile(counterFile); err == nil {
+		if num, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil {
+			return num
+		}
+	}
+
+	maxNum := 0
+	err := filepath.Walk(playlistPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || !strings.HasSuffix(strings.ToLower(path), ".mp3") {
+			return nil
+		}
+
+		prefix := strings.SplitN(filepath.Base(path), " ", 2)[0]
+		if len(prefix) == 4 {
+			if num, err := strconv.Atoi(prefix); err == nil && num > maxNum {
+				maxNum = num
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		log.Printf("Failed to scan %s for track numbers: %v", playlistPath, err)
+	}
+
+	return maxNum + 1
+}
+
+// saveNextTrackNumber persists the counter so the next run continues from
+// here instead of re-scanning (and risking the title-looks-numeric case).
+func saveNextTrackNumber(internalPath, playlistName string, next int) {
+	counterFile := filepath.Join(internalPath, "COUNTER_"+strings.ToUpper(playlistName)+".txt")
+	if err := os.WriteFile(counterFile, []byte(strconv.Itoa(next)), 0644); err != nil {
+		log.Printf("Failed to persist track counter for %s: %v", playlistName, err)
+	}
+}
+
 func downloadPlaylist(urlInfo URLInfo, config map[string]string) error {
 	if urlInfo.Ignore {
 		return nil
@@ -95,7 +147,7 @@ func downloadPlaylist(urlInfo URLInfo, config map[string]string) error {
 		"--add-metadata",
 		"--remote-components", "ejs:github",
 		"--download-archive", filepath.Join(config["internal_path"], "ARCHIVE_"+strings.ToUpper(playlistName)+".txt"),
-		"--output", filepath.Join(config["data_path"], playlistName, "%(n_entries+1-playlist_index)04d %(title|Unknown)s [%(id)s].%(ext)s"),
+		"--output", filepath.Join(config["data_path"], playlistName, "%(title|Unknown)s [%(id)s].%(ext)s"),
 		urlInfo.URL,
 	}
 
@@ -151,24 +203,57 @@ func processDownloads(urls []URLInfo, config map[string]string) {
 		}
 
 		log.Printf("Found %d files to tag", len(validFiles))
-		successCount := 0
-		for _, file := range validFiles {
-			trackNumber := strings.Split(filepath.Base(file), " ")[0]
 
-			err := taglib.WriteTags(file, map[string][]string{
+		// Order new files by download-completion time, most recent last.
+		// yt-dlp downloads playlist entries top-to-bottom (newest addition
+		// first), so the oldest-in-this-batch file finishes last and should
+		// get the smallest of the new numbers, keeping newest additions at
+		// the high end to match every already-numbered file in the library.
+		type newFile struct {
+			path    string
+			modTime time.Time
+		}
+		var newFiles []newFile
+		for _, file := range validFiles {
+			info, err := os.Stat(file)
+			if err != nil {
+				log.Printf("Failed to stat %s: %v", file, err)
+				continue
+			}
+			newFiles = append(newFiles, newFile{path: file, modTime: info.ModTime()})
+		}
+		sort.Slice(newFiles, func(i, j int) bool {
+			return newFiles[i].modTime.After(newFiles[j].modTime)
+		})
+
+		nextNum := getNextTrackNumber(config["internal_path"], playlistPath, playlistName)
+		successCount := 0
+		for _, f := range newFiles {
+			numberedPath := filepath.Join(filepath.Dir(f.path), fmt.Sprintf("%04d %s", nextNum, filepath.Base(f.path)))
+			if err := os.Rename(f.path, numberedPath); err != nil {
+				log.Printf("Failed to number %s: %v", f.path, err)
+				nextNum++
+				continue
+			}
+
+			err := taglib.WriteTags(numberedPath, map[string][]string{
 				// Multi-valued tags allowed
-				taglib.TrackNumber: {trackNumber},
+				taglib.TrackNumber: {strconv.Itoa(nextNum)},
 				taglib.Album:       {playlistName},
 			}, 0)
 			if err != nil {
-				log.Printf("Failed to tag %s: %v", file, err)
-				continue
+				log.Printf("Failed to tag %s: %v", numberedPath, err)
+			} else {
+				successCount++
 			}
-			successCount++
+			nextNum++
+		}
+		if len(newFiles) > 0 {
+			saveNextTrackNumber(config["internal_path"], playlistName, nextNum)
 		}
 		if successCount > 0 {
-			log.Printf("Tagged %d/%d files for %s", successCount, len(validFiles), urlInfo.Name)
-		} else if len(validFiles) > 0 {
+			log.Printf("Tagged %d/%d files for %s", successCount, len(newFiles), urlInfo.Name)
+		} else if len(newFiles) > 0 {
 			log.Printf("Failed to tag any files for %s", urlInfo.Name)
 		}
 	}
