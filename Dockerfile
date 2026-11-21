@@ -1,14 +1,5 @@
 # Build stage
-FROM golang:1.23 AS builder
-
-# Install build dependencies (Debian-based builder)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
-    gcc \
-    build-essential \
-    pkg-config \
-    libtag1-dev \
- && rm -rf /var/lib/apt/lists/*
+FROM golang:1.27 AS builder
 
 WORKDIR /build
 
@@ -21,11 +12,12 @@ RUN go mod download || true
 # Copy source code
 COPY . .
 
-# Build the application
-RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o media-ripper .
+# Build the application. taglib (go.senan.xyz/taglib) runs TagLib as an
+# embedded WASM module via wazero, so no cgo/libtag toolchain is needed.
+RUN CGO_ENABLED=0 GOOS=linux go build -a -o media-ripper .
 
 # Final stage
-FROM denoland/deno:latest
+FROM denoland/deno:2.9.8
 
 # Install runtime dependencies (Debian-based image)
 RUN apt-get update && apt-get install -y --no-install-recommends \
